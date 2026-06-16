@@ -1,0 +1,64 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Virtual environments
+venv/
+.venv/
+env/
+.env/
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb
+
+# Dataset — ảnh gốc và trung gian (quá lớn để commit)
+datasets/raw/
+datasets/preprocessed/
+datasets/rough_masks/
+datasets/normalized/
+datasets/noise_masks/
+datasets/train/
+datasets/gallery/
+datasets/probe/
+datasets/segmentation_masks/
+datasets/labelme_annotations/
+
+# Models & checkpoints
+models/
+checkpoints/
+*.pth
+*.pt
+*.ckpt
+
+# FAISS index
+*.index
+
+# Outputs
+outputs/
+
+# Logs
+runs/
+wandb/
+*.log
+*.csv
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Claude
+.claude/
+CLAUDE.md
