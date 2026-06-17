@@ -59,6 +59,10 @@ wandb/
 .DS_Store
 Thumbs.db
 
+# Learning materials
+snippets/
+exercises/
+
 # Claude
 .claude/
 CLAUDE.md
