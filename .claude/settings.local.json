@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(rm /home/dev/Coding/GR1/.vscode/iris.code-snippets)",
+      "Bash(rmdir /home/dev/Coding/GR1/.vscode)",
+      "Bash(mkdir -p /home/dev/Coding/GR1/snippets)"
+    ]
+  }
+}

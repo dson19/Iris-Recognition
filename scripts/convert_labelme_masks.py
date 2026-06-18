@@ -20,7 +20,7 @@ import argparse
 from pathlib import Path
 from tqdm import tqdm
 
-LABEL_MAP = {"iris": 1, "pupil": 2}
+LABEL_MAP = {"iris": 127, "pupil": 255}
 
 
 def json_to_mask(json_path: Path) -> np.ndarray:
