@@ -20,7 +20,18 @@ import argparse
 from pathlib import Path
 from tqdm import tqdm
 
-LABEL_MAP = {"iris": 1, "pupil": 2}
+LABEL_MAP = {"iris": 122, "pupil": 255}
+
+# Masks are stored on disk at 0/122/255 (easy to view), but downstream
+# (verify, U-Net training) reasons in contiguous class ids 0/1/2.
+MASK_VALUE_TO_CLASS = {0: 0, 122: 1, 255: 2}
+
+
+def remap_mask(mask: np.ndarray) -> np.ndarray:
+    out = np.zeros_like(mask)
+    for pixel_val, class_id in MASK_VALUE_TO_CLASS.items():
+        out[mask == pixel_val] = class_id
+    return out
 
 
 def json_to_mask(json_path: Path) -> np.ndarray:
@@ -74,6 +85,7 @@ def verify_masks(mask_dir: Path, n: int = 5):
     print(f"\n--- Sanity check (first {len(masks)} masks) ---")
     for mp in masks:
         m = cv2.imread(str(mp), cv2.IMREAD_GRAYSCALE)
+        m = remap_mask(m)   # 0/122/255 trên đĩa → class ids 0/1/2
         total = m.size
         iris_pct = 100 * (m == 1).sum() / total
         pupil_pct = 100 * (m == 2).sum() / total
@@ -84,7 +96,7 @@ def verify_masks(mask_dir: Path, n: int = 5):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--json_dir", type=Path, default=Path("datasets/labelme_annotations"))
+    parser.add_argument("--json_dir", type=Path, default=Path("datasets/preprocessed"))
     parser.add_argument("--output_dir", type=Path, default=Path("datasets/segmentation_masks"))
     parser.add_argument("--verify", action="store_true", help="Print class distribution after conversion")
     args = parser.parse_args()

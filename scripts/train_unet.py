@@ -30,6 +30,17 @@ from tqdm import tqdm
 SEED = 42
 NUM_CLASSES = 3  # 0=background, 1=iris, 2=pupil
 
+# Masks are stored on disk at 0/122/255 (easy to view), but the model needs
+# contiguous class ids 0/1/2 for CrossEntropyLoss.
+MASK_VALUE_TO_CLASS = {0: 0, 122: 1, 255: 2}
+
+
+def remap_mask(mask: np.ndarray) -> np.ndarray:
+    out = np.zeros_like(mask)
+    for pixel_val, class_id in MASK_VALUE_TO_CLASS.items():
+        out[mask == pixel_val] = class_id
+    return out
+
 
 def set_seed(seed):
     random.seed(seed)
@@ -61,6 +72,9 @@ class IrisSegDataset(Dataset):
         if mask is None:
             raise FileNotFoundError(f"Mask not found: {mask_path}")
 
+        # Masks stored at 0/122/255 for easy viewing → remap to class ids 0/1/2
+        mask = remap_mask(mask)
+
         if self.transform:
             aug = self.transform(image=img, mask=mask)
             img, mask = aug["image"], aug["mask"]
@@ -89,7 +103,8 @@ def find_pairs(img_dir: Path, mask_dir: Path) -> list[tuple[Path, Path]]:
 
 def get_train_transform():
     return A.Compose([
-        A.RandomRotate90(p=0.3),
+        # NOTE: không dùng RandomRotate90 — nó hoán đổi H↔W trên ảnh không vuông
+        # (280×320 → 320×280) khiến DataLoader không stack được batch.
         A.HorizontalFlip(p=0.5),
         A.ShiftScaleRotate(shift_limit=0.05, scale_limit=0.1, rotate_limit=15, p=0.5),
         A.GaussianBlur(blur_limit=(3, 5), p=0.3),
@@ -264,7 +279,7 @@ if __name__ == "__main__":
     parser.add_argument("--mask_dir",   type=Path, default=Path("datasets/segmentation_masks"))
     parser.add_argument("--output_dir", type=Path, default=Path("models"))
     parser.add_argument("--encoder",    type=str,  default="resnet34")
-    parser.add_argument("--epochs",     type=int,  default=50)
+    parser.add_argument("--epochs",     type=int,  default=40)
     parser.add_argument("--batch_size", type=int,  default=8)
     parser.add_argument("--lr",         type=float, default=1e-4)
     parser.add_argument("--val_split",  type=float, default=0.15,

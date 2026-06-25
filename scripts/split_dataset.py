@@ -1,11 +1,15 @@
 """
 Subject-disjoint split for CASIA-Iris Interval dataset.
 
+Chạy SAU normalize_iris.py — chia thẳng ảnh normalized (64×512 PNG) thành các tập,
+nên không cần normalize lại từng split.
+
 Split strategy:
   - Train  : first 200 subjects  → datasets/train/<subject_id>_<eye>/
-  - Gallery: last 49 subjects, 2 images per subject/eye → datasets/gallery/
-  - Probe  : last 49 subjects, remaining images         → datasets/probe/
+  - Gallery: last 49 subjects, 2 images per subject/eye → datasets/normalized_gallery/
+  - Probe  : last 49 subjects, remaining images         → datasets/normalized_probe/
 
+Tên thư mục đầu ra khớp với default của train_arcface / build_gallery / evaluate.
 Treats each (subject, eye) pair as one identity class.
 """
 
@@ -23,11 +27,11 @@ GALLERY_IMGS_PER_EYE = 2
 SEED = 42
 
 
-def collect_subjects(preprocessed_dir: Path) -> dict[str, dict[str, list[Path]]]:
+def collect_subjects(normalized_dir: Path) -> dict[str, dict[str, list[Path]]]:
     """Returns {subject_id: {eye: [img_paths]}} sorted by filename."""
     subjects: dict[str, dict[str, list[Path]]] = defaultdict(lambda: defaultdict(list))
-    for img_path in preprocessed_dir.rglob("*.jpg"):
-        # Directory structure: <subject_id>/<eye>/<filename>.jpg
+    for img_path in normalized_dir.rglob("*.png"):
+        # Directory structure: <subject_id>/<eye>/<filename>.png
         eye_dir = img_path.parent
         subject_dir = eye_dir.parent
         eye = eye_dir.name        # "L" or "R"
@@ -47,8 +51,8 @@ def copy_file(src: Path, dst: Path):
     shutil.copy2(src, dst)
 
 
-def split_dataset(preprocessed_dir: Path, output_dir: Path):
-    subjects = collect_subjects(preprocessed_dir)
+def split_dataset(normalized_dir: Path, output_dir: Path):
+    subjects = collect_subjects(normalized_dir)
     subject_ids = sorted(subjects.keys())
     total = len(subject_ids)
     print(f"Total subjects found: {total}")
@@ -61,8 +65,8 @@ def split_dataset(preprocessed_dir: Path, output_dir: Path):
     print(f"Train: {len(train_ids)} subjects | Eval: {len(eval_ids)} subjects")
 
     train_dir   = output_dir / "train"
-    gallery_dir = output_dir / "gallery"
-    probe_dir   = output_dir / "probe"
+    gallery_dir = output_dir / "normalized_gallery"
+    probe_dir   = output_dir / "normalized_probe"
 
     # --- Train set ---
     print("\nCopying train set...")
@@ -94,26 +98,25 @@ def split_dataset(preprocessed_dir: Path, output_dir: Path):
                 print(f"  [WARN] {subject_id}/{eye} has <= {GALLERY_IMGS_PER_EYE} images, no probe samples.")
 
     print(f"\nDone.")
-    print(f"  Train  : {sum(len(imgs) for sid in train_ids for imgs in subjects[sid].values())} images")
-    print(f"  Gallery: {gallery_count} images")
-    print(f"  Probe  : {probe_count} images")
-    print(f"Output: {output_dir}")
+    print(f"  Train  : {sum(len(imgs) for sid in train_ids for imgs in subjects[sid].values())} images → {train_dir}")
+    print(f"  Gallery: {gallery_count} images → {gallery_dir}")
+    print(f"  Probe  : {probe_count} images → {probe_dir}")
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Split CASIA dataset into train/gallery/probe")
+    parser = argparse.ArgumentParser(description="Split normalized CASIA dataset into train/gallery/probe")
     parser.add_argument(
-        "--preprocessed_dir",
+        "--normalized_dir",
         type=Path,
-        default=Path("datasets/preprocessed"),
-        help="Path to preprocessed images (output of preprocess.py)",
+        default=Path("datasets/normalized"),
+        help="Path to normalized iris images (output of normalize_iris.py)",
     )
     parser.add_argument(
         "--output_dir",
         type=Path,
         default=Path("datasets"),
-        help="Root output directory (will create train/, gallery/, probe/ inside)",
+        help="Root output directory (creates train/, normalized_gallery/, normalized_probe/ inside)",
     )
     args = parser.parse_args()
 
-    split_dataset(args.preprocessed_dir, args.output_dir)
+    split_dataset(args.normalized_dir, args.output_dir)

@@ -199,17 +199,19 @@ def main(args):
     print(f"Device: {device}")
 
     # --- Data ---
+    # Hai dataset object RIÊNG: train có augment, val không.
+    # (Không dùng random_split vì 2 Subset của nó dùng CHUNG 1 dataset gốc →
+    #  gán val.transform sẽ vô tình tắt augment của cả train.)
     train_ds = NormalizedIrisDataset(args.train_dir, get_train_transform())
+    val_base = NormalizedIrisDataset(args.train_dir, get_val_transform())
     num_classes = len(train_ds.classes)
 
-    # 10% of training data for validation proxy
+    # 10% of training data for validation proxy — chia theo index, cùng seed
     n_val = max(1, int(len(train_ds) * 0.10))
-    n_train = len(train_ds) - n_val
-    train_subset, val_subset = torch.utils.data.random_split(
-        train_ds, [n_train, n_val],
-        generator=torch.Generator().manual_seed(SEED),
-    )
-    val_subset.dataset.transform = get_val_transform()
+    perm = torch.randperm(len(train_ds), generator=torch.Generator().manual_seed(SEED)).tolist()
+    val_idx, train_idx = perm[:n_val], perm[n_val:]
+    train_subset = torch.utils.data.Subset(train_ds, train_idx)
+    val_subset   = torch.utils.data.Subset(val_base, val_idx)
 
     train_loader = DataLoader(train_subset, batch_size=args.batch_size, shuffle=True,  num_workers=4, pin_memory=True)
     val_loader   = DataLoader(val_subset,   batch_size=args.batch_size, shuffle=False, num_workers=4, pin_memory=True)
@@ -228,6 +230,7 @@ def main(args):
 
     args.output_dir.mkdir(parents=True, exist_ok=True)
     best_acc = 0.0
+    epochs_no_improve = 0   # đếm số epoch liên tiếp val_acc không cải thiện
     history = []
 
     for epoch in range(1, args.epochs + 1):
@@ -238,7 +241,10 @@ def main(args):
         improved = val_acc > best_acc
         if improved:
             best_acc = val_acc
+            epochs_no_improve = 0
             torch.save(model.state_dict(), args.output_dir / "arcface_best.pth")
+        else:
+            epochs_no_improve += 1
 
         log = {"epoch": epoch, "train_loss": round(train_loss, 4),
                "train_acc": round(train_acc, 4), "val_acc": round(val_acc, 4)}
@@ -246,7 +252,13 @@ def main(args):
 
         print(f"Epoch {epoch:03d}/{args.epochs}  "
               f"loss={train_loss:.4f}  train_acc={train_acc:.4f}  val_acc={val_acc:.4f}"
-              + ("  ← best" if improved else ""))
+              + ("  ← best" if improved else f"  (no improve {epochs_no_improve}/{args.patience})"))
+
+        # Early stopping: val_acc không cải thiện sau `patience` epoch → dừng
+        if epochs_no_improve >= args.patience:
+            print(f"\nEarly stop: val_acc không tăng trong {args.patience} epoch "
+                  f"(best={best_acc:.4f}). Dừng ở epoch {epoch}.")
+            break
 
     # Save metadata (class list needed for gallery building)
     meta = {"classes": train_ds.classes, "embed_dim": EMBED_DIM}
@@ -269,5 +281,7 @@ if __name__ == "__main__":
     parser.add_argument("--lr",         type=float, default=1e-4)
     parser.add_argument("--margin",     type=float, default=0.5)
     parser.add_argument("--scale",      type=float, default=64.0)
+    parser.add_argument("--patience",   type=int,   default=15,
+                        help="Early stop nếu val_acc không cải thiện sau N epoch")
     args = parser.parse_args()
     main(args)

@@ -84,37 +84,40 @@ def evaluate(args):
         probe_embeddings.append(emb)
         probe_labels.append(img_path.parent.name)   # e.g. "201_L"
 
-    probes = np.stack(probe_embeddings).astype(np.float32)  # N×256
+    probes = np.stack(probe_embeddings).astype(np.float32)  # Np×256
+    probe_labels = np.array(probe_labels)
 
-    # --- 1:N Search ---
-    scores, indices = index.search(probes, k=1)   # N×1
-    top1_scores  = scores[:, 0]
-    top1_indices = indices[:, 0]
-    top1_labels  = [gallery_labels[i] for i in top1_indices]
+    # Lấy lại toàn bộ vector gallery từ FAISS index
+    gallery_vecs = index.reconstruct_n(0, index.ntotal).astype(np.float32)  # Ng×256
+    gallery_labels = np.array(gallery_labels)
 
-    # --- Rank-1 Accuracy ---
-    rank1_correct = sum(
-        pl == tl for pl, tl in zip(probe_labels, top1_labels)
-    )
+    # --- Ma trận cosine: mọi probe × mọi gallery (vector đã L2-norm) ---
+    sims = probes @ gallery_vecs.T   # Np×Ng
+
+    # --- Rank-1: với mỗi probe, lấy gallery GẦN NHẤT ---
+    best = sims.argmax(axis=1)
+    pred_labels = gallery_labels[best]
+    rank1_correct = int((pred_labels == probe_labels).sum())
     rank1_acc = rank1_correct / len(probe_labels)
 
-    # --- Build score pairs for ROC ---
-    # genuine: probe and top-1 match (same class)
-    # impostor: probe and top-1 don't match
-    y_true = np.array([1 if pl == tl else 0
-                       for pl, tl in zip(probe_labels, top1_labels)])
+    # --- Verification: DÙNG TOÀN BỘ cặp (genuine vs impostor) ---
+    # match[i, j] = True nếu probe i và gallery j cùng danh tính
+    match = (probe_labels[:, None] == gallery_labels[None, :])   # Np×Ng
+    genuine_scores  = sims[match]      # cặp CÙNG người
+    impostor_scores = sims[~match]     # cặp KHÁC người
+    print(f"Cặp genuine : {len(genuine_scores)}  |  cặp impostor: {len(impostor_scores)}")
 
-    fpr, tpr, thresholds = roc_curve(y_true, top1_scores)
+    y_true  = np.concatenate([np.ones(len(genuine_scores)), np.zeros(len(impostor_scores))])
+    y_score = np.concatenate([genuine_scores, impostor_scores])
+
+    fpr, tpr, thresholds = roc_curve(y_true, y_score)
     fnr = 1 - tpr
     roc_auc = auc(fpr, tpr)
 
-    # EER
-    diff = np.abs(fpr - fnr)
-    eer_idx = diff.argmin()
+    # EER: điểm FAR ≈ FRR
+    eer_idx = np.argmin(np.abs(fpr - fnr))
     eer = float((fpr[eer_idx] + fnr[eer_idx]) / 2)
     eer_threshold = float(thresholds[eer_idx])
-
-    # FAR / FRR at EER threshold
     far = float(fpr[eer_idx])
     frr = float(fnr[eer_idx])
 
@@ -126,6 +129,8 @@ def evaluate(args):
     print(f"  FRR @ EER       : {frr*100:.2f}%")
     print(f"  AUC             : {roc_auc:.4f}")
     print(f"  EER Threshold   : {eer_threshold:.4f}")
+    print(f"  Genuine  cosine : mean={genuine_scores.mean():.3f}  min={genuine_scores.min():.3f}")
+    print(f"  Impostor cosine : mean={impostor_scores.mean():.3f}  max={impostor_scores.max():.3f}")
     print(f"{'='*45}")
 
     # --- Save results ---
@@ -139,7 +144,9 @@ def evaluate(args):
         "auc": round(roc_auc, 4),
         "eer_threshold": round(eer_threshold, 4),
         "num_probes": len(probe_labels),
-        "gallery_size": index.ntotal,
+        "gallery_size": int(index.ntotal),
+        "num_genuine_pairs": int(len(genuine_scores)),
+        "num_impostor_pairs": int(len(impostor_scores)),
     }
     with open(args.output_dir / "eval_report.json", "w") as f:
         json.dump(report, f, indent=2)
@@ -152,14 +159,29 @@ def evaluate(args):
     plt.plot([0, 1], [0, 1], "k--", linewidth=0.8)
     plt.xlabel("FAR (False Acceptance Rate)")
     plt.ylabel("TAR (True Acceptance Rate)")
-    plt.title("ROC Curve — Iris Recognition 1:N")
+    plt.title("ROC Curve — Iris Recognition (verification, all pairs)")
     plt.legend()
     plt.grid(True, alpha=0.3)
     plt.tight_layout()
     roc_path = args.output_dir / "roc_curve.png"
     plt.savefig(roc_path, dpi=150)
-    print(f"\nROC curve : {roc_path}")
-    print(f"Report    : {args.output_dir / 'eval_report.json'}")
+
+    # --- Histogram genuine vs impostor ---
+    plt.figure(figsize=(7, 4))
+    plt.hist(impostor_scores, bins=60, alpha=0.6, label="Impostor (khác người)", color="tab:red", density=True)
+    plt.hist(genuine_scores,  bins=60, alpha=0.6, label="Genuine (cùng người)", color="tab:green", density=True)
+    plt.axvline(eer_threshold, color="black", linestyle="--", label=f"EER thr = {eer_threshold:.3f}")
+    plt.xlabel("Cosine similarity")
+    plt.ylabel("Mật độ")
+    plt.title("Phân phối điểm: Genuine vs Impostor")
+    plt.legend()
+    plt.tight_layout()
+    hist_path = args.output_dir / "score_distribution.png"
+    plt.savefig(hist_path, dpi=130)
+
+    print(f"\nROC curve    : {roc_path}")
+    print(f"Score hist   : {hist_path}")
+    print(f"Report       : {args.output_dir / 'eval_report.json'}")
 
 
 if __name__ == "__main__":

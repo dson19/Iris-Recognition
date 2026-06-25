@@ -14,19 +14,17 @@ venv/
 env/
 .env/
 
-# Jupyter
+# Jupyter — chỉ ignore checkpoint autosave, VẪN commit notebook (*.ipynb)
 .ipynb_checkpoints/
-*.ipynb
 
 # Dataset — ảnh gốc và trung gian (quá lớn để commit)
 datasets/raw/
 datasets/preprocessed/
-datasets/rough_masks/
 datasets/normalized/
 datasets/noise_masks/
 datasets/train/
-datasets/gallery/
-datasets/probe/
+datasets/normalized_gallery/
+datasets/normalized_probe/
 datasets/segmentation_masks/
 datasets/labelme_annotations/
 
